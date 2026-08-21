@@ -781,11 +781,62 @@ function addSwitchGate(button, gateCell) {
 // Every existing link (not just the hovered one) draws a faint connecting
 // line continuously while in link mode, so the whole map's wiring is
 // visible at a glance; the hovered tile's own links redraw brighter on top.
+// Every {x,y} cell (plain cell coordinates, not the +0.5-offset world
+// coords some of these are stored in - so every caller can just do
+// `*40+20` uniformly for the pixel center) that x,y is linked to/from:
+// a portal's partner, a button's gates, or - reverse lookup - the button a
+// gate belongs to.
+function getLinkedCells(x, y) {
+  const key = `${x},${y}`;
+  const cells = [];
+
+  const portalLink = mapPortalLinks[key];
+  if (portalLink?.destination) {
+    cells.push({ x: Math.floor(portalLink.destination.x), y: Math.floor(portalLink.destination.y) });
+  }
+
+  const sw = mapSwitches[key];
+  if (sw) {
+    for (const t of sw.toggle) cells.push({ x: t.pos.x, y: t.pos.y });
+  }
+
+  for (const [bKey, swEntry] of Object.entries(mapSwitches)) {
+    if (bKey === key) continue;
+    if (swEntry.toggle.some(t => t.pos.x === x && t.pos.y === y)) {
+      const [bx, by] = bKey.split(',').map(Number);
+      cells.push({ x: bx, y: by });
+    }
+  }
+
+  return cells;
+}
+
 function redrawLinkOverlay() {
   if (!linkGraphicsLayer) return;
   const g = linkGraphicsLayer;
   g.clear();
-  if (!linkMode) return;
+
+  if (!linkMode) {
+    // Outside link mode: a lightweight "what's this linked to" on hover -
+    // a box on the hovered tile, a line to each connection, and a box on
+    // each of those too. No ambient boxes on every portal/button here -
+    // that's link-mode-only, this is meant to stay unobtrusive otherwise.
+    if (!hoveredLinkCell) return;
+    const { x, y } = hoveredLinkCell;
+    const connections = getLinkedCells(x, y);
+    if (!connections.length) return;
+
+    g.lineStyle(3, 0x5b8cff, 0.95);
+    g.drawRect(x * 40 + 2, y * 40 + 2, 36, 36);
+
+    g.lineStyle(2, 0x00e0a0, 0.85);
+    for (const c of connections) {
+      g.moveTo(x * 40 + 20, y * 40 + 20);
+      g.lineTo(c.x * 40 + 20, c.y * 40 + 20);
+      g.drawRect(c.x * 40 + 2, c.y * 40 + 2, 36, 36);
+    }
+    return;
+  }
 
   const buttonKey = linkSource?.type === 'button' ? `${linkSource.x},${linkSource.y}` : null;
   const activeToggle = buttonKey ? (mapSwitches[buttonKey]?.toggle ?? []) : [];
@@ -835,22 +886,12 @@ function redrawLinkOverlay() {
   }
 
   if (hoveredLinkCell) {
-    const key = `${hoveredLinkCell.x},${hoveredLinkCell.y}`;
-    const cx = hoveredLinkCell.x * 40 + 20, cy = hoveredLinkCell.y * 40 + 20;
+    const { x, y } = hoveredLinkCell;
+    const cx = x * 40 + 20, cy = y * 40 + 20;
     g.lineStyle(3, 0xffffff, 0.9);
-
-    const portalLink = mapPortalLinks[key];
-    if (portalLink?.destination) {
+    for (const c of getLinkedCells(x, y)) {
       g.moveTo(cx, cy);
-      g.lineTo(portalLink.destination.x * 40, portalLink.destination.y * 40);
-    }
-
-    const sw = mapSwitches[key];
-    if (sw) {
-      for (const t of sw.toggle) {
-        g.moveTo(cx, cy);
-        g.lineTo(t.pos.x * 40 + 20, t.pos.y * 40 + 20);
-      }
+      g.lineTo(c.x * 40 + 20, c.y * 40 + 20);
     }
   }
 }
@@ -961,11 +1002,12 @@ function wireMouse() {
 
     const cell = screenToCell(e.clientX, e.clientY);
 
-    if (linkMode) {
-      hoveredLinkCell = cell;
-      redrawLinkOverlay();
-      return;
-    }
+    // Tracked (and the link overlay redrawn) regardless of link mode - a
+    // hover outside link mode still shows a linked tile's connections, see
+    // redrawLinkOverlay()'s own !linkMode branch.
+    hoveredLinkCell = cell;
+    redrawLinkOverlay();
+    if (linkMode) return;
 
     if (!painting) {
       // Hover indicator: what the current tool would place here right now -
@@ -1000,6 +1042,8 @@ function wireMouse() {
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   canvas.addEventListener('mouseleave', () => {
     if (!painting) clearGhost();
+    hoveredLinkCell = null;
+    redrawLinkOverlay();
   });
 }
 
