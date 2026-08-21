@@ -1,0 +1,9 @@
+{
+  "name": "tagpro-map-editor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bare-bones offline TagPro sandbox: real Box2D physics, boost/bomb tiles, two teams. Phase 1 of a TagPro map editor.",
+  "scripts": {
+    "start": "npx --yes serve -l 8080 ."
+  }
+}
