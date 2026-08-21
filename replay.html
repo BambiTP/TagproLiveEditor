@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Tagpro Replay</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #222; }
+    #canvas { width: 100vw; height: 100vh; }
+    #controls {
+      position: fixed; bottom: 10px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 10; color: #fff;
+      display: flex; gap: 8px; align-items: center;
+    }
+  </style>
+
+  <!-- Physics -->
+  <script src="https://cdn.jsdelivr.net/gh/BambiTP/box2dcdn@main/Box2dWeb-2.1.a.3.js"></script>
+  <!-- Renderer -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/8.6.6/pixi.min.js"></script>
+
+  <!-- Data -->
+  <script src="physicsData.js"></script>
+  <script src="renderData.js"></script>
+  <script src="quadrantCoords.js"></script>
+
+  <!-- Systems -->
+  <script src="contactListener.js"></script>
+  <script src="game.js"></script>
+  <script src="renderer.js"></script>
+  <script src="replayPlayer.js"></script>
+  <script src="spritesheetLoader.js"></script>
+  <script src="texturePackPicker.js"></script>
+</head>
+<body>
+  <div id="canvas"></div>
+
+  <button id="textureButton" style="position:fixed;top:10px;right:10px;z-index:20;">🎨 Textures</button>
+  <div id="textureModal" style="display:none;position:fixed;inset:0;z-index:30;background:rgba(0,0,0,0.85);overflow:auto;">
+    <div style="max-width:900px;margin:40px auto;background:#222;border-radius:8px;">
+      <div style="display:flex;justify-content:flex-end;padding:8px;">
+        <button id="textureModalClose">✕</button>
+      </div>
+      <div id="textureModalBody"></div>
+    </div>
+  </div>
+
+  <div id="controls">
+    <input type="file" id="file-input" accept=".ndjson,.txt"/>
+    <button id="btn-play">Play</button>
+    <button id="btn-pause">Pause</button>
+    <input type="range" id="scrubber" min="0" max="100" value="0" step="0.1"/>
+    <span id="time-display">0:00 / 0:00</span>
+    <label>Speed:
+      <select id="speed-select">
+        <option value="0.25">0.25x</option>
+        <option value="0.5">0.5x</option>
+        <option value="1" selected>1x</option>
+        <option value="2">2x</option>
+        <option value="4">4x</option>
+      </select>
+    </label>
+  </div>
+
+  <script>
+    document.getElementById('textureButton').addEventListener('click', () => {
+      const modal = document.getElementById('textureModal');
+      modal.style.display = 'block';
+      mountTexturePackPicker(document.getElementById('textureModalBody'), () => location.reload());
+    });
+    document.getElementById('textureModalClose').addEventListener('click', () => {
+      document.getElementById('textureModal').style.display = 'none';
+    });
+
+    const GAME_CONFIG = {
+      gravityX: 0,
+      gravityY: 0,
+      radius:         0.19 * 2.5,
+      density:        0.475,
+      friction:       0.5,
+      restitution:    0.2,
+      linearDamping:  0.5,
+      angularDamping: 0.5,
+      accel:          0.025 * 2.5,
+      maxSpeed:       2.5 * 2.5,
+    };
+
+    let game, renderer, rp;
+
+    async function init() {
+      game     = new Game(GAME_CONFIG);
+      renderer = new Renderer(document.getElementById('canvas'));
+      await renderer.init();
+      await renderer.loadTextures(getSelectedImageMap());
+
+      // Sync every player's sprite position to their Box2D body each frame.
+      // Not using renderer.start() here because that also calls createMap(),
+      // which must wait until the replay's map event has been processed.
+      renderer.app.ticker.add(() => {
+        for (const player of Object.values(game.players)) {
+          if (!player.container) continue;
+          player.container.x = player.x * GRID_SIZE;
+          player.container.y = player.y * GRID_SIZE;
+        }
+      });
+
+      rp = new ReplayPlayer(game, renderer);
+    }
+
+    function fmt(ms) {
+      const s = Math.floor(ms / 1000);
+      return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    }
+
+    const scrubber    = document.getElementById('scrubber');
+    const timeDisplay = document.getElementById('time-display');
+
+    function updateHUD() {
+      if (!rp) return;
+      const pct = rp.duration > 0 ? (rp.time / rp.duration) * 100 : 0;
+      scrubber.value = pct;
+      timeDisplay.textContent = `${fmt(rp.time)} / ${fmt(rp.duration)}`;
+      requestAnimationFrame(updateHUD);
+    }
+
+    document.getElementById('file-input').addEventListener('change', async e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      if (!game) await init();
+      rp.load(text);
+      rp.play();
+      updateHUD();
+    });
+
+    document.getElementById('btn-play').addEventListener('click', () => rp?.play());
+
+    document.getElementById('btn-pause').addEventListener('click', () => rp?.pause());
+
+    document.getElementById('speed-select').addEventListener('change', e => {
+      if (rp) rp.speed = parseFloat(e.target.value);
+    });
+
+    scrubber.addEventListener('input', () => {
+      if (!rp) return;
+      const wasPlaying = rp.playing;
+      rp.pause();
+      rp.time   = (scrubber.value / 100) * rp.duration;
+      rp.cursor = 0;
+      rp.flush();
+      if (wasPlaying) rp.play();
+    });
+  </script>
+</body>
+</html>

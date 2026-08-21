@@ -1,95 +1,36 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TagPro Map Editor - Sandbox</title>
-<link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TagproOpen</title>
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: #fff;
+    }
+
+    a {
+      font-size: 24px;
+      color: #4da3ff;
+      text-decoration: none;
+      margin: 10px;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+  </style>
 </head>
 <body>
-
-<div id="viewport"></div>
-
-<div id="loadingOverlay">Loading...</div>
-
-<div id="menu" class="hidden">
-  <div id="settingsPanel">
-    <div class="menuHeader">
-      <h2>Settings</h2>
-      <button type="button" id="menuCloseBtn" class="menuBtn">Close</button>
-    </div>
-
-    <section class="menuSection">
-      <h3>Controls</h3>
-      <div id="keybindList"></div>
-      <button type="button" id="resetKeybindsBtn" class="menuBtn">Reset to defaults</button>
-    </section>
-
-    <section class="menuSection">
-      <h3>Camera</h3>
-      <label class="menuCheckboxRow">
-        <input type="checkbox" id="freeZoomToggle">
-        Free camera zoom (always on in this sandbox)
-      </label>
-      <p class="menuHint">Scroll to zoom, or use the zoom in/out keys above.</p>
-    </section>
-
-    <section class="menuSection">
-      <h3>Effects</h3>
-      <label class="menuCheckboxRow">
-        <input type="checkbox" id="particlesToggle">
-        Particles
-      </label>
-    </section>
-  </div>
-</div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/8.5.2/pixi.min.js" defer></script>
-
-<script src="shared/Box2dWeb-2.1.a.3.js" defer></script>
-<script src="shared/box2dBody.js" defer></script>
-<script src="shared/forceFields.js" defer></script>
-<script src="shared/movement.js" defer></script>
-
-<script src="engine/eventBus.js" defer></script>
-<script src="engine/coords.js" defer></script>
-<script src="engine/gameConfig.js" defer></script>
-<script src="engine/settingsResolver.js" defer></script>
-<script src="engine/tiles/powerupTypes.js" defer></script>
-<script src="engine/tiles/physicsData.js" defer></script>
-<script src="engine/settingsSchema.js" defer></script>
-<script src="engine/matchSettings.js" defer></script>
-<script src="engine/gravity.js" defer></script>
-<script src="engine/gameState.js" defer></script>
-<script src="engine/physicsWorld.js" defer></script>
-<script src="engine/snapshotFactory.js" defer></script>
-<script src="engine/playerLifecycle.js" defer></script>
-<script src="engine/flagLogic.js" defer></script>
-<script src="engine/teamTiles.js" defer></script>
-<script src="engine/gateLogic.js" defer></script>
-<script src="engine/powerupSpawner.js" defer></script>
-<script src="engine/eggball.js" defer></script>
-<script src="engine/gameHelpers.js" defer></script>
-<script src="engine/physicsHelpers.js" defer></script>
-<script src="engine/mapWiring.js" defer></script>
-<script src="engine/tiles/mapFormat.js" defer></script>
-<script src="engine/tiles/tileHandlers.js" defer></script>
-<script src="engine/tiles/tileLogic.js" defer></script>
-<script src="engine/matchManager.js" defer></script>
-<script src="engine/gameInstance.js" defer></script>
-
-<script src="client/renderData.js" defer></script>
-<script src="client/quadrantCoords.js" defer></script>
-<script src="client/particles.js" defer></script>
-
-<script src="client/render/renderer.js" defer></script>
-<script src="client/render/spriteAtlas.js" defer></script>
-<script src="client/render/wallAutotile.js" defer></script>
-<script src="client/render/playerRenderer.js" defer></script>
-<script src="client/render/camera.js" defer></script>
-
-<script src="client/settingsMenu.js" defer></script>
-<script src="client/main.js" defer></script>
-
+  <a href="game.html">Play Game</a>
+  <a href="replay.html">Replay Viewer</a>
 </body>
 </html>

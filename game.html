@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Tagpro</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #222; }
+    #canvas { width: 100vw; height: 100vh; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/gh/BambiTP/box2dcdn@main/Box2dWeb-2.1.a.3.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/8.6.6/pixi.min.js"></script>
+  <script src="gameConfig.js"></script>
+  <script src="physicsData.js"></script>
+  <script src="renderData.js"></script>
+  <script src="quadrantCoords.js"></script>
+  <script src="helpers.js"></script>
+  <script src="contactListener.js"></script>
+  <script src="game.js"></script>
+  <script src="mapLoader.js"></script>
+  <script src="renderer.js"></script>
+  <script src="spritesheetLoader.js"></script>
+  <script src="texturePackPicker.js"></script>
+</head>
+<body>
+  <div id="canvas"></div>
+  <div id="mapPicker" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#222;color:#fff;gap:12px;">
+    <label for="mapIdInput">Map ID</label>
+    <input id="mapIdInput" type="number" value="12345"/>
+    <button id="playButton">Play</button>
+  </div>
+  <button id="textureButton" style="position:fixed;top:10px;right:10px;z-index:20;">🎨 Textures</button>
+  <div id="textureModal" style="display:none;position:fixed;inset:0;z-index:30;background:rgba(0,0,0,0.85);overflow:auto;">
+    <div style="max-width:900px;margin:40px auto;background:#222;border-radius:8px;">
+      <div style="display:flex;justify-content:flex-end;padding:8px;">
+        <button id="textureModalClose">✕</button>
+      </div>
+      <div id="textureModalBody"></div>
+    </div>
+  </div>
+  <script>
+  document.getElementById('textureButton').addEventListener('click', () => {
+    const modal = document.getElementById('textureModal');
+    modal.style.display = 'block';
+    mountTexturePackPicker(document.getElementById('textureModalBody'), () => location.reload());
+  });
+  document.getElementById('textureModalClose').addEventListener('click', () => {
+    document.getElementById('textureModal').style.display = 'none';
+  });
+  let game, renderer;
+  // ─── Input ────────────────────────────────────────────────────────────────
+  window.addEventListener('keydown', e => handleKey(e.key, true));
+  window.addEventListener('keyup',   e => handleKey(e.key, false));
+  function handleKey(key, down) {
+    const red  = game?.players.find(p => p.id === 0);
+    const blue = game?.players.find(p => p.id === 1);
+    switch (key) {
+      case 'ArrowLeft':  if (red)  red.left  = down; break;
+      case 'ArrowRight': if (red)  red.right = down; break;
+      case 'ArrowUp':    if (red)  red.up    = down; break;
+      case 'ArrowDown':  if (red)  red.down  = down; break;
+      case 'a': case 'A': if (blue) blue.left  = down; break;
+      case 'd': case 'D': if (blue) blue.right = down; break;
+      case 'w': case 'W': if (blue) blue.up    = down; break;
+      case 's': case 'S': if (blue) blue.down  = down; break;
+    }
+  }
+  // ─── Start ────────────────────────────────────────────────────────────────
+  async function start(mapId) {
+    document.getElementById('mapPicker').style.display = 'none';
+    game = new Game(gameConfig);
+    const { map: tileMap, wallMap, dataMap, spawnPool, portals, switches } = await loadMap(mapId);
+    game.map       = tileMap;
+    game.wallMap   = wallMap;
+    game.dataMap   = dataMap;
+    game.spawnPool = spawnPool;
+    game.createMap();
+    game.applyPortalData(portals);
+    game.applySwitchData(switches);
+    game.spawnPlayer(0, 'red');
+    game.spawnPlayer(1, 'blue');
+    renderer = new Renderer(document.getElementById('canvas'));
+    await renderer.init();
+    await renderer.loadTextures(getSelectedImageMap());
+    renderer.start();
+    renderer.drawPlayer(0);
+    renderer.drawPlayer(1);
+    renderer.app.ticker.add(() => {
+      const red = game.players.find(p => p.id === 0);
+      if (red) renderer.setCamera(red.x, red.y);
+    });
+    game.start();
+    helper.startPowerups();
+  }
+  document.getElementById('playButton').addEventListener('click', () => {
+    const mapId = Number(document.getElementById('mapIdInput').value);
+    start(mapId);
+  });
+  </script>
+</body>
+</html>
