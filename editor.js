@@ -246,6 +246,7 @@ function switchTeam() {
   p.team = p.team === 'red' ? 'blue' : 'red';
   if (p.container) p.container.destroy();
   renderer.drawPlayer(0);
+  if (p.hasFlag) renderer.attachFlag(0, p.hasFlag.flagId); // see redrawPlayers()'s comment
 }
 
 function zoomToFit() {
@@ -335,12 +336,26 @@ async function resetMatch() {
 // catches up shortly after you stop.
 let backgroundRepaintTimer = null;
 
+// renderer.drawPlayer() always builds a fresh, empty flagLayer and
+// reassigns player.sprites.flagLayer to it - normal gameplay only calls it
+// once at boot so this never matters there, but every repaint here calls it
+// again just to reattach players to the world createMap() just wiped, which
+// silently drops the flag sprite of whoever's carrying one (the game state,
+// player.hasFlag, is untouched - only the visual vanishes). Re-running
+// attachFlag() afterward when they're holding one fixes that.
+function redrawPlayers() {
+  for (const p of game.players) {
+    renderer.drawPlayer(p.id);
+    if (p.hasFlag) renderer.attachFlag(p.id, p.hasFlag.flagId);
+  }
+}
+
 function queueBackgroundRepaint() {
   if (backgroundRepaintTimer) clearTimeout(backgroundRepaintTimer);
   backgroundRepaintTimer = setTimeout(() => {
     backgroundRepaintTimer = null;
     renderer.createMap();
-    for (const p of game.players) renderer.drawPlayer(p.id);
+    redrawPlayers();
     redrawSpawnPoints();
     redrawLinkOverlay();
   }, 80);
@@ -404,7 +419,7 @@ function growMapIfNeeded(x, y) {
 
   game.createMap();
   renderer.createMap();
-  for (const p of game.players) renderer.drawPlayer(p.id);
+  redrawPlayers();
   redrawSpawnPoints();
   redrawLinkOverlay();
 
