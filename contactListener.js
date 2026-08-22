@@ -42,12 +42,41 @@ if (oHas) {
   helper.popPlayer(other);
 }
 }
-// All 5 wall-family tile ids - the square wall (1) and the four 45-degree
-// corner walls (1.1-1.4). physicsData.js only sets category:'wall' on the
-// square one; the diagonals don't declare a category at all (default to
-// 'unknown' in game.js's makeBody), so checking tileId directly is the only
-// way to catch "landed on top of a 45" too.
-const WALL_TILE_IDS = [1, 1.1, 1.2, 1.3, 1.4];
+// The square wall (1) and the four 45-degree corner walls (1.1-1.4).
+// physicsData.js only sets category:'wall' on the square one; the diagonals
+// don't declare a category at all (default to 'unknown' in game.js's
+// makeBody), so checking tileId directly is the only way to catch these too.
+const FLAT_WALL_TILE_ID = 1;
+const DIAGONAL_WALL_TILE_IDS = [1.1, 1.2, 1.3, 1.4];
+
+// Cooldown registry: every boost/bomb/portal/pup cooldown below schedules
+// its "back to ready" step through trackCooldown() instead of a bare
+// setTimeout. The editor's Reset Cooldowns key (editor.js's
+// resetCooldowns -> resetAllCooldowns) fires every pending entry's
+// callback immediately instead of waiting out the timer - that replays
+// the exact same code each cooldown already runs on its own, so the reset
+// can't drift out of sync with whatever a given tile's "ready" step
+// actually does.
+const pendingCooldowns = new Set();
+
+function trackCooldown(delay, fn) {
+  const entry = {};
+  entry.id = setTimeout(() => {
+    pendingCooldowns.delete(entry);
+    fn();
+  }, delay);
+  entry.fn = fn;
+  pendingCooldowns.add(entry);
+  return entry;
+}
+
+function resetAllCooldowns() {
+  for (const entry of pendingCooldowns) {
+    clearTimeout(entry.id);
+    entry.fn();
+  }
+  pendingCooldowns.clear();
+}
 
 function handlePlayerBegin(player, other) {
 
@@ -69,12 +98,20 @@ function handlePlayerBegin(player, other) {
   // contact normal, matching this file's existing lightweight-heuristic
   // style (see helper.applyExplosion etc). A harmless no-op outside
   // gravity mode - it just refills a counter applyJumps() never reads.
-  if (WALL_TILE_IDS.includes(other.tileId)) {
+  //
+  // The flat wall (1) only refills when the contact sits above the player's
+  // center (the top of the floor) - touching its sides shouldn't count. The
+  // 45-degree corner walls (1.1-1.4) are sloped the whole way across their
+  // hypotenuse, so any contact with one at all - anywhere the ball touches
+  // it - counts as landing.
+  if (other.tileId === FLAT_WALL_TILE_ID) {
     const dx = (other.x + 0.5) - player.x;
     const dy = (other.y + 0.5) - player.y;
     if (dy > 0.3 && Math.abs(dx) < 0.6) {
       player.jumpsRemaining = game.config.jumpCharges;
     }
+  } else if (DIAGONAL_WALL_TILE_IDS.includes(other.tileId)) {
+    player.jumpsRemaining = game.config.jumpCharges;
   }
 
   switch (other.category) {
@@ -93,11 +130,11 @@ function handlePlayerBegin(player, other) {
       helper.applyBoost(player);
       helper.scheduleChangeState(other.x, other.y, 'cooldown', 14.1);
       other.state = 'cooldown';
-      
-      setTimeout(() => {
+
+      trackCooldown(game.config.blueBoostCooldown, () => {
         helper.scheduleChangeState(other.x, other.y, 'active', 14);
         other.state = 'active';
-      }, game.config.blueBoostCooldown);
+      });
       break;
     }
 
@@ -109,10 +146,10 @@ function handlePlayerBegin(player, other) {
       other.state = 'cooldown';
       helper.scheduleChangeState(other.x, other.y, 'cooldown', 15.1);
 
-      setTimeout(() => {
+      trackCooldown(game.config.blueBoostCooldown, () => {
         other.state = 'active';
         helper.scheduleChangeState(other.x, other.y, 'active', 15);
-      }, game.config.blueBoostCooldown);
+      });
       break;
     }
 
@@ -124,10 +161,10 @@ function handlePlayerBegin(player, other) {
       other.state = 'cooldown';
       helper.scheduleChangeState(other.x, other.y, 'cooldown', 5.1);
 
-      setTimeout(() => {
+      trackCooldown(game.config.boostCooldown, () => {
         other.state = 'active';
         helper.scheduleChangeState(other.x, other.y, 'active', 5);
-      }, game.config.boostCooldown);
+      });
       break;
     }
     case 'bomb': {
@@ -148,10 +185,10 @@ function handlePlayerBegin(player, other) {
       helper.scheduleTileChange(other.x, other.y, 10.1);
 
       // 4. Reset after cooldown
-      setTimeout(() => {
+      trackCooldown(game.config.bombCooldown, () => {
         other.state = 'active';
         helper.scheduleTileChange(other.x, other.y, 10);
-      }, game.config.bombCooldown);
+      });
       break;
     }
 
@@ -254,14 +291,14 @@ if (state === 'JukeJuice') {
   helper.scheduleChangeState(other.x, other.y, 'empty', 6);
 
   // Respawn a random pup after 60s
-  setTimeout(() => {
+  trackCooldown(game.config.powerupRespawn, () => {
     if (!game) return;
     const powerupStates = ['JukeJuice', 'RollingBomb', 'Tagpro'];
     const stateToId = { JukeJuice: 6.1, RollingBomb: 6.2, Tagpro: 6.3 };
     const newState = powerupStates[Math.floor(Math.random() * powerupStates.length)];
     tile.state = newState;
     helper.scheduleChangeState(other.x, other.y, newState, stateToId[newState]);
-  }, game.config.powerupRespawn);
+  });
 
   break;
 }
@@ -270,7 +307,7 @@ if (state === 'JukeJuice') {
       if (!other.portalDest || other.portalOnCooldown || player.portalCooldown) break;
 
       other.portalOnCooldown = true;
-      setTimeout(() => { other.portalOnCooldown = false; }, other.portalCooldown);
+      trackCooldown(other.portalCooldown, () => { other.portalOnCooldown = false; });
 
       player.portalCooldown = true;
 
@@ -284,7 +321,7 @@ if (state === 'JukeJuice') {
       if (!other.portalDest || other.portalOnCooldown || player.portalCooldown) break;
 
       other.portalOnCooldown = true;
-      setTimeout(() => { other.portalOnCooldown = false; }, other.portalCooldown);
+      trackCooldown(other.portalCooldown, () => { other.portalOnCooldown = false; });
 
       player.portalCooldown = true;
 
@@ -298,7 +335,7 @@ if (state === 'JukeJuice') {
       if (!other.portalDest || other.portalOnCooldown || player.portalCooldown) break;
 
       other.portalOnCooldown = true;
-      setTimeout(() => { other.portalOnCooldown = false; }, other.portalCooldown);
+      trackCooldown(other.portalCooldown, () => { other.portalOnCooldown = false; });
 
       player.portalCooldown = true;
 

@@ -195,7 +195,10 @@ respawnPlayer(player) {
   },
 
 startPowerups() {
-  setTimeout(() => {
+  // trackCooldown (contactListener.js) instead of a bare setTimeout so the
+  // editor's Reset Cooldowns key can also fast-forward the very first pup
+  // spawn, not just later pickup respawns.
+  trackCooldown(game.config.powerupRespawn, () => {
     if (!game) return;
 
     const powerupStates = ['JukeJuice', 'RollingBomb', 'Tagpro'];
@@ -222,7 +225,7 @@ startPowerups() {
         this.scheduleChangeState(x, y, randomState, targetId);
       }
     }
-  }, game.config.powerupRespawn);
+  });
 }
 
 

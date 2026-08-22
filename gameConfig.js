@@ -53,8 +53,8 @@
 
     boostMultiplier:     2.9,
 
-    bombRadius:          0.4 * 7   * TPU,
-    bombStrength:        1.25      * TPU,
+    bombRadius:          7,
+    bombStrength:        4,
 
     rollingBombRadius:   0.4 * 5   * TPU,
     rollingBombStrength: 0.75      * TPU,

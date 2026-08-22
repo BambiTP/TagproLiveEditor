@@ -177,23 +177,29 @@ async function bootRenderer() {
   });
 
   game.start();
+  // Seeds every powerup tile's dataMap.state (JukeJuice/RollingBomb/Tagpro)
+  // powerupRespawn ms after boot - without this, pickups stay permanently
+  // inert (contactListener.js's 'powerup' case requires tile.state to
+  // already be set). game.html (the standalone play page) already calls
+  // this; the editor's boot path just never did.
+  helper.startPowerups();
   buildPalette();
   buildToolbar();
   wireMouse();
 }
 
-// ─── Movement (arrow keys only - single player) ─────────────────────────
+// ─── Movement (arrow keys + WASD, single player) ─────────────────────────
 window.addEventListener('keydown', e => handleKey(e.key, true));
 window.addEventListener('keyup',   e => handleKey(e.key, false));
 function handleKey(key, down) {
-  if (freeLook) return;
+  if (freeLook || isTypingInField()) return;
   const red = game?.players.find(p => p.id === 0);
   if (!red) return;
   switch (key) {
-    case 'ArrowLeft':  red.left  = down; break;
-    case 'ArrowRight': red.right = down; break;
-    case 'ArrowUp':    red.up    = down; break;
-    case 'ArrowDown':  red.down  = down; break;
+    case 'ArrowLeft':  case 'a': case 'A': red.left  = down; break;
+    case 'ArrowRight': case 'd': case 'D': red.right = down; break;
+    case 'ArrowUp':    case 'w': case 'W': red.up    = down; break;
+    case 'ArrowDown':  case 's': case 'S': red.down  = down; break;
   }
 }
 
@@ -287,56 +293,23 @@ window.addEventListener('keydown', e => {
   if (e.key === 'r' || e.key === 'R') resetCooldowns();
 });
 
-// Boost/bomb/portal/pup cooldowns are tracked as ad-hoc mutable state right
-// on the live body userdata (other.state, other.portalOnCooldown) or the
-// dataMap entry (tile.state for pups) - see contactListener.js. Walking
-// every tile and putting those back to their ready state is the whole job;
-// player position, flags, and switch/gate state are untouched.
-const PUP_ID_TO_STATE = { 6.1: 'JukeJuice', 6.2: 'RollingBomb', 6.3: 'Tagpro' };
-
+// Every boost/bomb/portal/pup cooldown schedules its own "back to ready"
+// step through contactListener.js's trackCooldown() instead of a bare
+// setTimeout, registering the pending callback in its pendingCooldowns set.
+// resetAllCooldowns() there fires every pending callback immediately (and
+// cancels the real timer) - that's the actual "back to ready" step each
+// tile already runs on its own, just run early, so this can't drift out of
+// sync with whatever a given category's cooldown actually does. Portal
+// cooldown has a second half that ISN'T a timer though - other.portalDest
+// setups also set player.portalCooldown = true, which normally only clears
+// when the player's contact with the portal ends (contactListener.js's
+// handlePlayerEnd); clear it here directly too so leaving a player "stuck"
+// mid-teleport doesn't block portals even after their tile cooldown resets.
+// Player position, flags, and switch/gate state are untouched.
 function resetCooldowns() {
   if (!game) return;
-
-  for (let y = 0; y < game.dataMap.length; y++) {
-    for (let x = 0; x < (game.dataMap[y]?.length ?? 0); x++) {
-      const tile = game.dataMap[y][x];
-      if (!tile?.body) continue;
-
-      const ud = tile.body.GetUserData();
-      switch (ud.category) {
-        case 'redBoost':
-        case 'blueBoost':
-        case 'boost':
-          if (ud.state === 'cooldown') {
-            ud.state = 'active';
-            helper.scheduleChangeState(x, y, 'active', tile.id);
-          }
-          break;
-
-        case 'bomb':
-          if (ud.state === 'cooldown') {
-            ud.state = 'active';
-            helper.scheduleTileChange(x, y, 10);
-          }
-          break;
-
-        case 'portal':
-        case 'redPortal':
-        case 'bluePortal':
-          ud.portalOnCooldown = false;
-          break;
-
-        case 'powerup': {
-          const restored = PUP_ID_TO_STATE[tile.id];
-          if (restored && tile.state !== restored) {
-            tile.state = restored;
-            helper.scheduleChangeState(x, y, restored, tile.id);
-          }
-          break;
-        }
-      }
-    }
-  }
+  resetAllCooldowns();
+  for (const p of game.players) p.portalCooldown = false;
 }
 
 // ─── Background-layer repaint coalescing ─────────────────────────────────
@@ -1568,8 +1541,9 @@ const SETTINGS_FIELDS = [
 //     setPlayerPhysics: (box2d, bodyDef, fixDef) => { fixDef.friction = 0; fixDef.restitution = 0.3; },
 //     setWallPhysics:   (box2d, bodyDef, fixDef) => { fixDef.friction = 0; fixDef.restitution = 0.3; },
 //   });
-// restitution/wallRestitution are overridden to 0 here (not real TagPro's
-// 0.3) so balls don't bounce off the ground/walls in gravity mode.
+// restitution/wallRestitution are overridden here (not real TagPro's 0.3
+// for both): the ball doesn't bounce off walls/floor at all, but walls keep
+// a little bounce of their own.
 // gravityY is TPU-scaled like every other tile-unit value in gameConfig.js.
 // jumpStrength isn't touched here - it's a gameConfig.js default already
 // fit to the real measured ~4.2 tile peak, not something this preset needs
@@ -1580,7 +1554,7 @@ const GRAVITY_PRESET = {
   friction: 0,
   restitution: 0,
   wallFriction: 0,
-  wallRestitution: 0,
+  wallRestitution: 0.2,
   jumpCharges: 2,
 };
 const CTF_PRESET = {
