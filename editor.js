@@ -284,36 +284,59 @@ function isTypingInField() {
 window.addEventListener('keydown', e => {
   if (isTypingInField()) return;
   if (e.key === 'z' || e.key === 'Z') zoomToFit();
-  if (e.key === 'r' || e.key === 'R') resetMatch();
+  if (e.key === 'r' || e.key === 'R') resetCooldowns();
 });
 
-// "Reset everything back to the way it was": boost/bomb/portal cooldowns,
-// gate/switch states, powerup pickup states, player position/powerups -
-// all of it is scattered across ad-hoc per-tile properties (other.state,
-// other.portalOnCooldown, tile.state, ...) with pending setTimeouts of
-// their own (contactListener.js), and there's no single hook that resets
-// all of that in place. Rebuilding game/renderer from the *current*
-// game.map/wallMap (not reloading from network/file - your edits stay)
-// sidesteps all of it at once: fresh dataMap, fresh physics bodies, fresh
-// player, nothing left over from however far the last test run got.
-async function resetMatch() {
-  if (!game || !renderer) return;
+// Boost/bomb/portal/pup cooldowns are tracked as ad-hoc mutable state right
+// on the live body userdata (other.state, other.portalOnCooldown) or the
+// dataMap entry (tile.state for pups) - see contactListener.js. Walking
+// every tile and putting those back to their ready state is the whole job;
+// player position, flags, and switch/gate state are untouched.
+const PUP_ID_TO_STATE = { 6.1: 'JukeJuice', 6.2: 'RollingBomb', 6.3: 'Tagpro' };
 
-  const map = game.map;
-  const wallMap = game.wallMap;
-  const team = game.players.find(p => p.id === 0)?.team ?? 'red';
+function resetCooldowns() {
+  if (!game) return;
 
-  game = new Game(gameConfig);
-  game.map       = map;
-  game.wallMap   = wallMap;
-  game.spawnPool = buildSpawnPool(mapSpawnPoints, game.map);
-  game.createMap();
-  game.applyPortalData(mapPortalLinks);
-  game.applySwitchData(mapSwitches);
-  game.spawnPlayer(0, team);
+  for (let y = 0; y < game.dataMap.length; y++) {
+    for (let x = 0; x < (game.dataMap[y]?.length ?? 0); x++) {
+      const tile = game.dataMap[y][x];
+      if (!tile?.body) continue;
 
-  renderer.destroy();
-  await bootRenderer();
+      const ud = tile.body.GetUserData();
+      switch (ud.category) {
+        case 'redBoost':
+        case 'blueBoost':
+        case 'boost':
+          if (ud.state === 'cooldown') {
+            ud.state = 'active';
+            helper.scheduleChangeState(x, y, 'active', tile.id);
+          }
+          break;
+
+        case 'bomb':
+          if (ud.state === 'cooldown') {
+            ud.state = 'active';
+            helper.scheduleTileChange(x, y, 10);
+          }
+          break;
+
+        case 'portal':
+        case 'redPortal':
+        case 'bluePortal':
+          ud.portalOnCooldown = false;
+          break;
+
+        case 'powerup': {
+          const restored = PUP_ID_TO_STATE[tile.id];
+          if (restored && tile.state !== restored) {
+            tile.state = restored;
+            helper.scheduleChangeState(x, y, restored, tile.id);
+          }
+          break;
+        }
+      }
+    }
+  }
 }
 
 // ─── Background-layer repaint coalescing ─────────────────────────────────
@@ -1538,12 +1561,15 @@ const SETTINGS_FIELDS = [
 // holds, so each is a full, deterministic reset - not gravityY toggled on
 // top of whatever friction/accel/etc. a manual Settings edit left behind.
 //
-// Gravity preset values are real TagPro's own gravity-mode event handler:
+// Gravity preset values start from real TagPro's own gravity-mode event
+// handler:
 //   tagpro.events.register({
 //     gravity: {x: 0, y: 9.8 / 2},
 //     setPlayerPhysics: (box2d, bodyDef, fixDef) => { fixDef.friction = 0; fixDef.restitution = 0.3; },
 //     setWallPhysics:   (box2d, bodyDef, fixDef) => { fixDef.friction = 0; fixDef.restitution = 0.3; },
 //   });
+// restitution/wallRestitution are overridden to 0 here (not real TagPro's
+// 0.3) so balls don't bounce off the ground/walls in gravity mode.
 // gravityY is TPU-scaled like every other tile-unit value in gameConfig.js.
 // jumpStrength isn't touched here - it's a gameConfig.js default already
 // fit to the real measured ~4.2 tile peak, not something this preset needs
@@ -1552,26 +1578,21 @@ const GRAVITY_PRESET = {
   ...DEFAULT_GAME_CONFIG,
   gravityY: (9.8 / 2) * TPU,
   friction: 0,
-  restitution: 0.3,
+  restitution: 0,
   wallFriction: 0,
-  wallRestitution: 0.3,
+  wallRestitution: 0,
   jumpCharges: 2,
 };
 const CTF_PRESET = {
   ...DEFAULT_GAME_CONFIG,
 };
 
-// Applies a settings bundle immediately - not just to gameConfig (which
-// only affects future spawns/tiles) but live onto whatever's already
-// spawned/placed, same "instant feedback" the Settings modal's Save button
-// already does for maxSpeed/accel.
-function applyPhysicsPreset(preset) {
-  Object.assign(gameConfig, preset);
-  // b2World's gravity is captured once at construction (new b2World(new
-  // b2Vec2(...), true) in game.js) - it does NOT hold a live reference to
-  // gameConfig, so mutating gameConfig.gravityX/Y above does nothing to the
-  // already-running world on its own. SetGravity() is the only way to make
-  // a gravity change actually take effect on a world that already exists.
+// b2World's gravity and every fixture's friction/restitution are captured
+// once at creation time - they do NOT hold a live reference to gameConfig,
+// so mutating gameConfig alone does nothing to bodies that already exist.
+// Both the preset buttons and the Settings modal's Save button need to push
+// changes onto everything already spawned/placed, not just future spawns.
+function pushLivePhysicsToWorld() {
   game.world.SetGravity(new Box2D.Common.Math.b2Vec2(gameConfig.gravityX, gameConfig.gravityY));
 
   for (const p of game.players) {
@@ -1591,7 +1612,11 @@ function applyPhysicsPreset(preset) {
       }
     }
   }
+}
 
+function applyPhysicsPreset(preset) {
+  Object.assign(gameConfig, preset);
+  pushLivePhysicsToWorld();
   openSettingsModal(); // rebuild the table so it reflects the new values
 }
 
@@ -1636,18 +1661,13 @@ document.getElementById('settingsModalSave').addEventListener('click', () => {
     const value = Number(document.getElementById(`settingsInput_${field.key}`).value);
     if (!Number.isNaN(value)) gameConfig[field.key] = value * scale;
   }
-  // b2World's gravity is a snapshot taken at construction, not a live
-  // reference to gameConfig - editing gravityY here would otherwise do
-  // nothing to the world that's already running (see applyPhysicsPreset).
-  game.world.SetGravity(new Box2D.Common.Math.b2Vec2(gameConfig.gravityX, gameConfig.gravityY));
-  // maxSpeed/accel/jumpsRemaining are copied onto each player at spawn time
-  // (game.js spawnPlayer), not read live from gameConfig - push them onto
-  // whoever's already spawned so the change is felt immediately, not just
-  // next spawn.
+  pushLivePhysicsToWorld();
+  // maxSpeed/accel are copied onto each player at spawn time (game.js
+  // spawnPlayer), not read live from gameConfig - push them onto whoever's
+  // already spawned so the change is felt immediately, not just next spawn.
   for (const p of game.players) {
     p.maxSpeed = gameConfig.maxSpeed;
     p.accel = gameConfig.accel;
-    p.jumpsRemaining = gameConfig.jumpCharges;
   }
   closeModal('settingsModal');
 });
